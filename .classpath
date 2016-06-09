@@ -25,5 +25,6 @@
 	<classpathentry kind="lib" path="C:/Program Files/Java/jdk1.8.0_65/jre/lib/jna-4.1.0.jar"/>
 	<classpathentry kind="lib" path="C:/Program Files/Java/jdk1.8.0_65/jre/lib/jna-platform-4.1.0.jar"/>
 	<classpathentry kind="lib" path="C:/Program Files/Java/jdk1.8.0_65/jre/lib/commons-logging-1.2.jar"/>
+	<classpathentry kind="lib" path="C:/Program Files/Java/JDBC/MySQL/mysql-connector-java-5.1.39/mysql-connector-java-5.1.39-bin.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

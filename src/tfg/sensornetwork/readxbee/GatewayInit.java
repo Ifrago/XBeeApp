@@ -1,20 +1,9 @@
 package tfg.sensornetwork.readxbee;
 
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Date;
-
 import encrypt.StringEncrypt;
-//Imports antiguos
-import gnu.io.PortInUseException;
-import gnu.io.SerialPort;
-
-
-import tfg.sensornetwork.readxbee.PortRead;
-import tfg.sensornetwork.readxbee.PortWrite;
 import tfg.sensornetwork.readxbee.model.XBee;
 import tfg.sensornetwork.readxbee.*;
+import tfg.sensornetwork.connector.*;
 
 import com.digi.xbee.api.RemoteXBeeDevice;
 //Imports de la API JAVA XBEE
@@ -32,11 +21,12 @@ public class GatewayInit {
 	private static final int BAUD_RATE = 9600;
 	private static final String REMOTE_NODE_IDENTIFIER = "TX";
 
-	
+	static ConnectorBBDD mySQLBBDD = new ConnectorBBDD();
 	static XBee xbee = new XBee();
 
 	public static void main(String[] args) throws Exception {
 		XBeeDevice myDevice = new XBeeDevice(PORT, BAUD_RATE);
+		mySQLBBDD.connectBDD();
 		
 		for(;;){
 			
@@ -50,7 +40,11 @@ public class GatewayInit {
 					System.out.format("From %s >> %s | %s%n", xbeeMessage.getDevice().get16BitAddress(), 
 							HexUtils.prettyHexString(HexUtils.byteArrayToHexString(xbeeMessage.getData())), 
 							new String(xbeeMessage.getData()));
-					OperateFrame.operateInfo(new String(xbeeMessage.getData()),myDevice,remoteDevice);
+					mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "connection");
+					
+					boolean beBlackList = OperateFrame.comproveAddress(remoteDevice.get64BitAddress().toString());
+					System.out.println(beBlackList);
+					if(!beBlackList)OperateFrame.operateInfo(new String(xbeeMessage.getData()),myDevice,remoteDevice);
 				}
 					
 				System.out.println("\n>> Waiting for data...");

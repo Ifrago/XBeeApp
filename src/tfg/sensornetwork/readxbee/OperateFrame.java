@@ -3,15 +3,18 @@ package tfg.sensornetwork.readxbee;
 import encrypt.StringEncrypt;
 import gnu.io.PortInUseException;
 import gnu.io.SerialPort;
-import tfg.sensornetwork.readxbee.PortRead;
-import tfg.sensornetwork.readxbee.PortWrite;
-import tfg.sensornetwork.readxbee.model.XBee;
+
+import tfg.sensornetwork.connector.ConnectorBBDD;
+import tfg.sensornetwork.readxbee.model.*;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
+import java.util.GregorianCalendar;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
@@ -27,123 +30,179 @@ import org.apache.http.util.EntityUtils;
 
 import com.digi.xbee.api.RemoteXBeeDevice;
 import com.digi.xbee.api.XBeeDevice;
+import com.digi.xbee.api.exceptions.TimeoutException;
+import com.digi.xbee.api.exceptions.XBeeException;
 
 public class OperateFrame {
 	
-	static String URL_HTTP_BASE= "http://192.168.56.101:3000/";
+	private static String URL_HTTP_BASE= "http://localhost:3000/";
+	private static final String DATA_TO_SEND_OK_AUTH = "1";
+	private static final String DATA_TO_SEND_NO_AUTH  = "00";
 	static XBee xbee = new XBee();
-	static ArrayList<XBee> xbees = new ArrayList<XBee> ();
 	static String key="92AE31A79FEEB2A3";
-	static ArrayList <String> blackList= new ArrayList <String> ();//@MAC que descartaremos;
-	static StringEncrypt encrypt = new StringEncrypt();
-	private static OutputStream Output= null;
+	private static XBeeDevice myDevice=null;
+	private static ConnectorBBDD mySQLBBDD = new ConnectorBBDD();
 	
-	public static boolean comproveAddress(String frame){
-		if(!blackList.contains(frame.substring(8,12))){
-			return false;
-		}else{ 
-			return true;
-		}
-	}
-	public static void setBlackList(String devilMAC){
-		blackList.add(devilMAC);
-	}
-	public static String idFrame(String frame){
-		String idFrame=null;
-		//Comprobamos que no sea el paquete inicial que siempre recibimos , 7E
-		if(frame.length()<=2){
-			idFrame=frame.substring(0,frame.length());
-		}
-		//Enviamos el idFrame, que nos lo dice en el byte 4 del frame
-		int frameLength=hex2decimal(frame.substring(6,8));		
-		return idFrame;
-	}
-	public static void operateInfo(String payload,XBeeDevice myDevice, RemoteXBeeDevice remoteDevice) throws Exception{
-		System.out.println("Operate Info------------------------------------");
-		if(payload.equals("/01/")){//Enviar al server ( se mueve )
-			System.out.println("OPInf: 01");
-			System.out.println(httpPostSimple(createMessageServer(1,myDevice.get16BitAddress().toString())));
-		}else if(payload.equals("/02/")){//Enviar al server ( no se mueve )
-			System.out.println("OPInf: 01");
-			System.out.println(httpPostSimple(createMessageServer(2,myDevice.get16BitAddress().toString())));			
-		}else{//Error de datos posiblemente corruptos
-			System.out.println("OPInf: err, payload corrupt");
-			setBlackList(remoteDevice.get16BitAddress().toString());
-		}
-		
-	}
-	public static XBee getXBee (){
-		
-		return xbee;
-	}
-	public static String readPayload(String frame){
-		System.out.println("readPayload---------------------------");
-		int j=0;
-		String orden="";
-		int packetLeng=hex2decimal(frame.substring(2,6));
-		xbee.setAddress(frame.substring(8,12));
-		System.out.println("Long del paquete: "+packetLeng+ "en HEX: "+frame.substring(2,6)+" Dirección del XBee: "+xbee.getAddress());		
-		for(int i = 8; i<packetLeng*2;i++ ){
-			if(frame.charAt(i)=='2'){
-				i++;
-				if(frame.charAt(i)=='F'){
-					j=i+1;
-					i++;
-					while(frame.charAt(i)!= 'F'){
-						i++;
-					}
-					orden= convertHexToString(frame.substring(j,i-1));
-					System.out.println("Orden ASCII: "+orden+ " Orden HEX: "+frame.substring(j,i-1));
-				}
+	public static  boolean comproveAddress(String xbeeAddress) throws SQLException{//Devolvemos FALSE si es una @MAC limpia.
+		System.out.println("ComproveAddress("+xbeeAddress+")");	
+		BlackList bList = mySQLBBDD.getBlackList(xbeeAddress);
+		if(bList.getTiempo()==null) return false;
+		else{
+			System.out.println("Fecha BlackList: "+bList.getTiempo());
+			System.out.println("Fecha Now: "+mySQLBBDD.timeNow());
+			
+			if(operateDate(bList.getTiempo())<=600000)return true;
+			else{
+				mySQLBBDD.deleteBlackList(xbeeAddress);
+				return false;
 			}
 		}
-		return orden;
 	}
-	
-	@SuppressWarnings("deprecation")
-	static public String getTime() throws Exception{
-		System.out.println("getTime---------------------------");
-		java.util.Date fecha = new Date();
-		String time= fecha.getHours()+":"+fecha.getMinutes()+":"+fecha.getSeconds()+" "+fecha.getDay()+"-"+fecha.getMonth()+"-"+fecha.getYear();
-		System.out.println("TIME: "+time);
-		return time;
+	private static boolean comproveNonce(String nonceXBee, XBee xbee) throws SQLException{
+		String nonceGood = Integer.toString(Integer.parseInt(xbee.getLastNonce())+1);
+		System.out.println("Comprove Nonce("+nonceXBee+","+nonceGood+")");		
+		if(nonceXBee==nonceGood)return true;
+		else return false;		
 	}
-	public static String createMessageServer(int action, String MAC) throws Exception{
+	public static void operateInfo(String payloads,XBeeDevice myDeviceF, RemoteXBeeDevice remoteDevice) throws Exception{
+		System.out.println("Operate Info------------------------------------");
+		String [] payload = payloads.split("/");
+		myDevice=myDeviceF;
+			if(payload[1].equals("01")){//Enviar al server ( se mueve )
+				if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null){
+					System.out.println("OPInf: 01||| Nonce: "+payload[0]);
+					if(!comproveNonce(payload[0], mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString()))){
+						System.out.println(httpPostSimple(1,createMessageServer(1, remoteDevice),remoteDevice));
+					}else{
+						mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_Nonce");
+						mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
+						myDevice.sendData(remoteDevice, DATA_TO_SEND_NO_AUTH.getBytes());//Lo desautenticamos						
+					}
+				}else{
+					mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Intrusion");
+					mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
+					myDevice.sendData(remoteDevice, DATA_TO_SEND_NO_AUTH.getBytes());//Lo desautenticamos					
+				}
+			}else if(payload[1].equals("02")){//Enviar al server ( no se mueve )
+				if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null){				
+					System.out.println("OPInf: 02||| Nonce: "+payload[0]);
+					if(!comproveNonce(payload[0], mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString()))){
+						System.out.println(httpPostSimple(1,createMessageServer(2, remoteDevice),remoteDevice));
+					}else{
+						mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Error_Nonce");
+						mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
+						myDevice.sendData(remoteDevice, DATA_TO_SEND_NO_AUTH.getBytes());//Lo desautenticamos
+					}
+				}else{
+					mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Intrusion");
+					mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
+					myDevice.sendData(remoteDevice, DATA_TO_SEND_NO_AUTH.getBytes());//Lo desautenticamos					
+				}
+			}else if(payload[1].equals("03")){//XBee se quiere autenticar.
+				System.out.println("OPInf: 03");
+				System.out.println(httpPostSimple(2,createMessageServer(3, remoteDevice),remoteDevice));	
+			}
+		
+	}	
+	public static String createMessageServer(int action, RemoteXBeeDevice remoteDevice) throws Exception{
 		System.out.println("createMessageServer---------------------------");
 		System.out.println("creating message to server...");
 		String message = "";
 		if(action==1){
-			message= "details={\"mac\":\""+MAC+"\",\"history\":\"Move- "+getTime()+"\"}";
+			message= "{\"mac\":\""+myDevice.get64BitAddress().toString()+"\",\"history\":\"Move- "+mySQLBBDD.timeNow()+"\"}";
 			System.out.println("Message created!: "+message);
 			return message;
-		}else{
-			message= "details={\"mac\":\""+MAC+"\",\"history\":\"Not Move- "+getTime()+"\"}";
+		}else if(action==2){
+			message= "{\"mac\":\""+myDevice.get64BitAddress().toString()+"\",\"history\":\"Not Move- "+mySQLBBDD.timeNow()+"\"}";
 			System.out.println("Message created!: "+message);
 			return message;
-		}
-		
+		}else if(action==3){
+			message= "{\"mac\":\""+myDevice.get64BitAddress().toString()+"\",\"macnet\":\""+remoteDevice.get64BitAddress().toString()+"\"}";
+			System.out.println("Message created!: "+message);
+			return message;
+		}else return null;
+				
 	}
 	
-	public static String httpPostSimple(String message){
+	public static String httpPostSimple(int action, String message, RemoteXBeeDevice remoteDevice) throws TimeoutException, XBeeException, SQLException{
 		System.out.println("httPostSimple---------------------------");
 		  HttpClient httpClient = HttpClientBuilder.create().build(); //Use this instead 
-		  String URL_FINAL=URL_HTTP_BASE+"xbees/history";
+		  String URL_FINAL=null;
+		  String dataSend= null;
+		  BlackList blist = new BlackList();
+		 if(action==1)URL_FINAL=URL_HTTP_BASE+"xbees/xbeepan/history";
+		 else  URL_FINAL=URL_HTTP_BASE+"xbees/auth/xbeenet";
 		  HttpResponse response=null;
-		  
+		  String nonce=null;
+		  if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) //miramos si XBee ya lo teniamos en la BBDD
+			  nonce=mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString()).getLastNonce();
 		  
 		try {
+			if(message!=null){				
 		        HttpPost request = new HttpPost(URL_FINAL);
 		        StringEntity params =new StringEntity(message);
-		        request.addHeader("content-type", "application/x-www-form-urlencoded");
+		        request.addHeader("content-type", "application/json");
 		        request.setEntity(params);
 		        response = httpClient.execute(request);
-		        System.out.println(response);
+		        System.out.println("operacion: "+action);
+		        System.out.println("respusta: "+response.getStatusLine().toString());		        
+		        if(action==2 && response.getStatusLine().toString().equals("HTTP/1.1 200 OK")){
+		        	System.out.println("Auth Valid!");
+		        	nonce = createNonce();
+		        	if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())==null) mySQLBBDD.addXBee(remoteDevice.get64BitAddress().toString(), nonce, 1);
+		        	else if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(), 1);
+		        	dataSend= nonce+DATA_TO_SEND_OK_AUTH;
+		        	System.out.println("Datasend to XBee: "+dataSend);
+		        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Auth");
+		        	myDevice.sendData(remoteDevice, dataSend.getBytes());
+		        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
+		        }else if(action==2 && !response.getStatusLine().toString().equals("HTTP/1.1 200 OK")){
+		        	System.out.println("Auth Invalid!");
+		        	if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);
+					mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
+		        	System.out.println("UnAtuh XBee");
+		        	myDevice.sendData(remoteDevice, DATA_TO_SEND_NO_AUTH.getBytes());
+		        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_Auth");
+		        }else if(action!=2 && !response.getStatusLine().toString().equals("HTTP/1.1 200 OK")){
+		        	System.out.println("History Invalid!");
+					mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
+					if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);
+		        	System.out.println("Datasend to XBee: 0");
+		        	myDevice.sendData(remoteDevice, DATA_TO_SEND_NO_AUTH.getBytes());
+		        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_History");
+		        }else if(action!=2 && response.getStatusLine().toString().equals("HTTP/1.1 200 OK")){
+		        	System.out.println("History Valid!");
+		        	dataSend= nonce+DATA_TO_SEND_OK_AUTH;
+		        	System.out.println("Datasend to XBee: "+dataSend);
+		        	myDevice.sendData(remoteDevice, dataSend.getBytes());
+		        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
+		        }else System.out.println("Error Server: "+response.getStatusLine().toString());
+				
+		       
+			}else{
+				mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Msg_error");
+			}		        
 		} catch (IOException e) {
 		    e.printStackTrace();
 		}
-		return response.toString() ;
+		 return response.toString() ;
 	}
 	
+	static String createNonce(){
+		System.out.println("createNonce()---------------------------");
+		java.util.Random rnd = new java.util.Random();		
+		int numRandom =(int) (rnd.nextDouble()*1000000000);
+		String nonce = Integer.toString(numRandom);
+		System.out.println("Number random created is "+numRandom+" and your length is: "+nonce.length());
+		return nonce;
+	}
+	//Operaciones-------------------------------------------------------
+	private static long operateDate(String timeOld){	
+		System.out.println("OPERATEDATE()------------");
+		long resultado = System.currentTimeMillis()-Long.parseLong(timeOld);
+		System.out.println("Milisegundos castigados: "+resultado+'\n'+"---------------------------------");
+		return resultado;	
+	}
 	//Conversores HEX---------------------------------------------------
     public static int hex2decimal(String s) {
         String digits = "0123456789ABCDEF";
