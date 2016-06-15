@@ -1,12 +1,8 @@
 package tfg.sensornetwork.readxbee;
 
-import encrypt.StringEncrypt;
-import tfg.sensornetwork.readxbee.model.XBee;
-import tfg.sensornetwork.readxbee.*;
 import tfg.sensornetwork.connector.*;
-
-import com.digi.xbee.api.RemoteXBeeDevice;
 //Imports de la API JAVA XBEE
+import com.digi.xbee.api.RemoteXBeeDevice;
 import com.digi.xbee.api.XBeeDevice;
 import com.digi.xbee.api.XBeeNetwork;
 import com.digi.xbee.api.exceptions.XBeeException;
@@ -22,11 +18,10 @@ public class GatewayInit {
 	private static final String REMOTE_NODE_IDENTIFIER = "TX";
 
 	static ConnectorBBDD mySQLBBDD = new ConnectorBBDD();
-	static XBee xbee = new XBee();
-
+			
 	public static void main(String[] args) throws Exception {
 		XBeeDevice myDevice = new XBeeDevice(PORT, BAUD_RATE);
-		mySQLBBDD.connectBDD();
+		mySQLBBDD.connectBBDD();
 		
 		for(;;){
 			
