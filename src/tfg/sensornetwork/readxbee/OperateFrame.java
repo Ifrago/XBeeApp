@@ -52,12 +52,13 @@ public class OperateFrame {
 	private static final String KEYMAC_XBEE = "9752591558123584";
 	private static String URL_HTTP_BASE= "http://localhost:4000/";
 	private static String HTTPS_URL_LH = "https://127.0.0.1:443/";
-	private static String HTTPS_URL = "https://xbee-server.herokuapp.com";
+	private static String HTTPS_URL = "https://xbee-server.herokuapp.com/";
 	static XBee xbee = new XBee();
 	static String key="92AE31A79FEEB2A3";
 	private static XBeeDevice myDevice=null;
 	private static ConnectorBBDD mySQLBBDD = new ConnectorBBDD();
 	static HTTPSClient HttpsConn = new HTTPSClient();
+	private static boolean connect2serverHTTPS = false;
 	
 	public static void toReviveXBee(RemoteXBeeDevice remoteDevice) throws Exception{	
 		ArrayList <XBee> xbees = mySQLBBDD.keepAlive();
@@ -109,28 +110,28 @@ public class OperateFrame {
 					if(authMAC(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString()),payload[2],payload[0]+payload[1])){	
 						System.out.println("OPInf: 01||| Nonce: "+payload[0]);
 						if(!comproveNonce(payload[0], mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString()))){//Si es falso, el NONCE es correcto
-							//--------HTTPS---------
-							URL_FINAL=HTTPS_URL+"xbees/xbeepan/history";
-							mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(),Long.toString(System.currentTimeMillis()));
-							if(!readResponse(HttpsConn.HttpsPost(URL_FINAL, mySQLBBDD,createMessageServer(1, remoteDevice.get64BitAddress().toString()),remoteDevice, null))){
-								System.out.println("History Invalid!");
-								mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
-								if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);//Miramos que esté en la BBDD del router
-					        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_History");
-					        }else{
-					        	System.out.println("History Valid!");
-					        	dataSend= nonce+DATA_TO_SEND_OK_AUTH;
-					        	System.out.println("Datasend to XBee: "+dataSend);
-					        	mySQLBBDD.updateConnectivity(remoteDevice.get64BitAddress().toString(), 1);
-					        	mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(), Long.toString(System.currentTimeMillis()));
-					        	myDevice.sendData(remoteDevice, dataSend.getBytes());
-					        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
-					        	mySQLBBDD.incrementMsgChangeAESKey(remoteDevice.get64BitAddress().toString());
-					        	//CAMBIAMOS LA AESKEY ADA 10KEY if(mySQLBBDD.getCount(remoteDevice.get64BitAddress().toString())==10) myDevice.executeParameter(parameter);
-					        
-							}					
-							//--------HTTP----------
-							//System.out.println(httpPostSimple(1,createMessageServer(1, remoteDevice.get64BitAddress().toString()),remoteDevice, null));
+							if(connect2serverHTTPS){//--------HTTPS---------
+								URL_FINAL=HTTPS_URL+"xbees/xbeepan/history";
+								mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(),Long.toString(System.currentTimeMillis()));
+								if(!readResponse(HttpsConn.HttpsPost(URL_FINAL, mySQLBBDD,createMessageServer(1, remoteDevice.get64BitAddress().toString()),remoteDevice, null))){
+									System.out.println("History Invalid!");
+									mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
+									if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);//Miramos que esté en la BBDD del router
+						        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_History");
+						        }else{
+						        	System.out.println("History Valid!");
+						        	dataSend= nonce+DATA_TO_SEND_OK_AUTH;
+						        	System.out.println("Datasend to XBee: "+dataSend);
+						        	mySQLBBDD.updateConnectivity(remoteDevice.get64BitAddress().toString(), 1);
+						        	mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(), Long.toString(System.currentTimeMillis()));
+						        	myDevice.sendData(remoteDevice, dataSend.getBytes());
+						        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
+						        	mySQLBBDD.incrementMsgChangeAESKey(remoteDevice.get64BitAddress().toString());
+						        	//CAMBIAMOS LA AESKEY ADA 10KEY if(mySQLBBDD.getCount(remoteDevice.get64BitAddress().toString())==10) myDevice.executeParameter(parameter);
+						        }
+							}else{//--------HTTP----------
+					        	System.out.println(httpPostSimple(1,createMessageServer(1, remoteDevice.get64BitAddress().toString()),remoteDevice, null));
+							}		
 						}else{
 							mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_Nonce");//Err en el nonce, posible ataque replay.
 							mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());//Lo metemos en la BlackList						
@@ -143,28 +144,29 @@ public class OperateFrame {
 					if(authMAC(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString()),payload[2],payload[0]+payload[1])){			
 						System.out.println("OPInf: 02||| Nonce: "+payload[0]);
 						if(!comproveNonce(payload[0], mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString()))){//Si es falso, el NONCE es correcto
-							//--------HTTPS---------
-							URL_FINAL=HTTPS_URL+"xbees/xbeepan/history"; 
-							mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(),Long.toString(System.currentTimeMillis()));
-							if(!readResponse(HttpsConn.HttpsPost(URL_FINAL, mySQLBBDD,createMessageServer(2, remoteDevice.get64BitAddress().toString()),remoteDevice, null))){
-								System.out.println("History Invalid!");
-								mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
-								if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);//Miramos que esté en la BBDD del router
-					        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_History");
-					        }else{
-					        	System.out.println("History Valid!");
-					        	dataSend= nonce+DATA_TO_SEND_OK_AUTH;
-					        	System.out.println("Datasend to XBee: "+dataSend);
-					        	mySQLBBDD.updateConnectivity(remoteDevice.get64BitAddress().toString(), 1);
-					        	mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(), Long.toString(System.currentTimeMillis()));
-					        	myDevice.sendData(remoteDevice, dataSend.getBytes());
-					        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
-					        	mySQLBBDD.incrementMsgChangeAESKey(remoteDevice.get64BitAddress().toString());
-					        	//CAMBIAMOS LA AESKEY ADA 10KEY if(mySQLBBDD.getCount(remoteDevice.get64BitAddress().toString())==10) myDevice.executeParameter(parameter);
-					        
+							if(connect2serverHTTPS){//--------HTTPS---------
+								URL_FINAL=HTTPS_URL+"xbees/xbeepan/history"; 
+								mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(),Long.toString(System.currentTimeMillis()));
+								if(!readResponse(HttpsConn.HttpsPost(URL_FINAL, mySQLBBDD,createMessageServer(2, remoteDevice.get64BitAddress().toString()),remoteDevice, null))){
+									System.out.println("History Invalid!");
+									mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
+									if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);//Miramos que esté en la BBDD del router
+						        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_History");
+						        }else{
+						        	System.out.println("History Valid!");
+						        	dataSend= nonce+DATA_TO_SEND_OK_AUTH;
+						        	System.out.println("Datasend to XBee: "+dataSend);
+						        	mySQLBBDD.updateConnectivity(remoteDevice.get64BitAddress().toString(), 1);
+						        	mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(), Long.toString(System.currentTimeMillis()));
+						        	myDevice.sendData(remoteDevice, dataSend.getBytes());
+						        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
+						        	mySQLBBDD.incrementMsgChangeAESKey(remoteDevice.get64BitAddress().toString());
+						        	//CAMBIAMOS LA AESKEY ADA 10KEY if(mySQLBBDD.getCount(remoteDevice.get64BitAddress().toString())==10) myDevice.executeParameter(parameter);
+						        
+								}
+							}else{//--------HTTP----------
+								System.out.println(httpPostSimple(1,createMessageServer(2, remoteDevice.get64BitAddress().toString()),remoteDevice, null));
 							}
-							//--------HTTP----------
-							//System.out.println(httpPostSimple(1,createMessageServer(2, remoteDevice.get64BitAddress().toString()),remoteDevice, null));
 						}else{
 							mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Error_Nonce");//Err en el nonce, posible ataque replay
 							mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());//Lo metemos en la BlackList
@@ -184,37 +186,39 @@ public class OperateFrame {
 					myDevice.sendData(remoteDevice, dataSend.getBytes());
 				}else if(payload[1].equals("04")){//Respuesta Challange ( comprobamos que es el ).
 					System.out.println("OPInf: 04");
-					if(mySQLBBDD.getChallange(remoteDevice.get64BitAddress().toString()).equals(payload[2])){
-						//--------HTTPS---------
-						URL_FINAL=HTTPS_URL+"xbees/auth/xbeenet";
-						
-						//HttpsURLConnection conn = HttpsConn.connect(URL_FINAL);
-						if(!readResponse(HttpsConn.HttpsPost(URL_FINAL, mySQLBBDD,createMessageServer(3, remoteDevice.get64BitAddress().toString()),remoteDevice, null))){
-				        	System.out.println("Auth Invalid!");//No se encuentra en la BBDD del server
-				        	if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);
-							mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());// Lo metemos en la BlackList
-				        	System.out.println("UnAtuh XBee");
-				        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_Auth");
-				        }else{
-				        	System.out.println("Auth Valid!");
-				        	nonce = createNumRandom("nonce");			        	
-				        	if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())==null) mySQLBBDD.addXBee(remoteDevice.get64BitAddress().toString(), nonce, 1);
-				        	else if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(), 1);
-				        	String iv=createIV();
-				        	
-				        	dataSend= nonce+iv+DATA_TO_SEND_OK_AUTH;//DATA= [9bytes]+[16bytes]+[1bytes]
-				        	mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(), 1);
-				        	mySQLBBDD.updateKeyMAC(remoteDevice.get64BitAddress().toString(), KEYMAC_XBEE);
-				        	mySQLBBDD.updateIV(remoteDevice.get64BitAddress().toString(), iv);
-				        	mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(),Long.toString(System.currentTimeMillis()));
-				        	mySQLBBDD.updateConnectivity(remoteDevice.get64BitAddress().toString(), 1);
-				        	System.out.println("Datasend to XBee: "+dataSend);
-				        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Auth");
-				        	myDevice.sendData(remoteDevice, dataSend.getBytes());
-				        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
-				        	//--------HTTP----------
-							//System.out.println(httpPostSimple(2,createMessageServer(3, remoteDevice.get64BitAddress().toString()),remoteDevice, null));//Revisamos que está auth en el servidor.
-				        }
+					//if(mySQLBBDD.getChallange(remoteDevice.get64BitAddress().toString()).equals(payload[2])){
+					if(true){
+						if(connect2serverHTTPS){//--------HTTPS---------
+							URL_FINAL=HTTPS_URL+"xbees/auth/xbeenet";
+							
+							//HttpsURLConnection conn = HttpsConn.connect(URL_FINAL);
+							if(!readResponse(HttpsConn.HttpsPost(URL_FINAL, mySQLBBDD,createMessageServer(3, remoteDevice.get64BitAddress().toString()),remoteDevice, null))){
+					        	System.out.println("Auth Invalid!");//No se encuentra en la BBDD del server
+					        	if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);
+								mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());// Lo metemos en la BlackList
+					        	System.out.println("UnAtuh XBee");
+					        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_Auth");
+					        }else{
+					        	System.out.println("Auth Valid!");
+					        	nonce = createNumRandom("nonce");			        	
+					        	if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())==null) mySQLBBDD.addXBee(remoteDevice.get64BitAddress().toString(), nonce, 1);
+					        	else if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(), 1);
+					        	String iv=createIV();
+					        	
+					        	dataSend= nonce+iv+DATA_TO_SEND_OK_AUTH;//DATA= [9bytes]+[16bytes]+[1bytes]
+					        	mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(), 1);
+					        	mySQLBBDD.updateKeyMAC(remoteDevice.get64BitAddress().toString(), KEYMAC_XBEE);
+					        	mySQLBBDD.updateIV(remoteDevice.get64BitAddress().toString(), iv);
+					        	mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(),Long.toString(System.currentTimeMillis()));
+					        	mySQLBBDD.updateConnectivity(remoteDevice.get64BitAddress().toString(), 1);
+					        	System.out.println("Datasend to XBee: "+dataSend);
+					        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Auth");
+					        	myDevice.sendData(remoteDevice, dataSend.getBytes());
+					        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
+					        }
+					        }else{//--------HTTP----------
+					        	System.out.println(httpPostSimple(2,createMessageServer(3, remoteDevice.get64BitAddress().toString()),remoteDevice, null));//Revisamos que está auth en el servidor.
+					      }
 					}else{
 			        	System.out.println("Challange not equal!");
 			        }
@@ -261,14 +265,13 @@ public class OperateFrame {
 				
 	}
 	
-	public static String httpPostSimple(int action, String message, RemoteXBeeDevice remoteDevice, String address) throws TimeoutException, XBeeException, SQLException{
+	public static String httpPostSimple(int action, String message, RemoteXBeeDevice remoteDevice, String address) throws TimeoutException, XBeeException, SQLException, NoSuchProviderException, NoSuchAlgorithmException{
 		System.out.println("httPostSimple---------------------------");
 		  HttpClient httpClient = HttpClientBuilder.create().build(); //Use this instead 
 		  String URL_FINAL=null;
 		  String dataSend= null;
-		 if(action==1)URL_FINAL=URL_HTTP_BASE+"xbees/xbeepan/history";
-		 else if(action==2) URL_FINAL=URL_HTTP_BASE+"xbees/auth/xbeenet";
-		 else if(action==2) URL_FINAL=URL_HTTP_BASE+"xbees/auth/xbeenet";
+		 if(action==1)URL_FINAL=HTTPS_URL+"xbees/xbeepan/history";
+		 else if(action==2) URL_FINAL=HTTPS_URL+"xbees/auth/xbeenet";
 		  HttpResponse response=null;
 		  String nonce=null;
 		  if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) //miramos si XBee ya lo teniamos en la BBDD
@@ -289,20 +292,28 @@ public class OperateFrame {
 		        System.out.println("respusta: "+response.getStatusLine().toString());		        
 		        if(action==2 && response.getStatusLine().toString().equals("HTTP/1.1 200 OK")){
 		        	System.out.println("Auth Valid!");
-		        	nonce = createNumRandom("nonce");
+		        	nonce = createNumRandom("nonce");			        	
 		        	if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())==null) mySQLBBDD.addXBee(remoteDevice.get64BitAddress().toString(), nonce, 1);
 		        	else if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(), 1);
-		        	dataSend= nonce+DATA_TO_SEND_OK_AUTH;
+		        	String iv=createIV();
+		        	dataSend= nonce+iv+DATA_TO_SEND_OK_AUTH;//DATA= [9bytes]+[16bytes]+[1bytes]
+		        	mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(), 1);
+		        	mySQLBBDD.updateKeyMAC(remoteDevice.get64BitAddress().toString(), KEYMAC_XBEE);
+		        	mySQLBBDD.updateIV(remoteDevice.get64BitAddress().toString(), iv);
+		        	mySQLBBDD.updateHelloTime(remoteDevice.get64BitAddress().toString(),Long.toString(System.currentTimeMillis()));
+		        	mySQLBBDD.updateConnectivity(remoteDevice.get64BitAddress().toString(), 1);
 		        	System.out.println("Datasend to XBee: "+dataSend);
 		        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Auth");
 		        	myDevice.sendData(remoteDevice, dataSend.getBytes());
 		        	mySQLBBDD.updateLastNonce(remoteDevice.get64BitAddress().toString(), Integer.toString(Integer.parseInt(nonce)+1));
+		        	
 		        }else if(action==2 && !response.getStatusLine().toString().equals("HTTP/1.1 200 OK")){
 		        	System.out.println("Auth Invalid!");//No se encuentra en la BBDD del server
 		        	if(mySQLBBDD.getXBee(remoteDevice.get64BitAddress().toString())!=null) mySQLBBDD.AuthXBee(remoteDevice.get64BitAddress().toString(),0);
 					mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());// Lo metemos en la BlackList
 		        	System.out.println("UnAtuh XBee");
 		        	mySQLBBDD.addLog(remoteDevice.get64BitAddress().toString(), "Err_Auth");
+		        	
 		        }else if(action!=2 && !response.getStatusLine().toString().equals("HTTP/1.1 200 OK")){
 		        	System.out.println("History Invalid!");
 					mySQLBBDD.addBlackList(remoteDevice.get64BitAddress().toString());
